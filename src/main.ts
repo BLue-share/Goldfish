@@ -6,6 +6,7 @@ import { ResultScene } from './scenes/ResultScene';
 import { ScoreTableScene } from './scenes/ScoreTableScene';
 import { LeaderboardScene } from './scenes/LeaderboardScene';
 import { getGameSize } from './utils/layout';
+import { isDomInputOpen } from './utils/domInput';
 
 const initialSize = getGameSize();
 
@@ -48,6 +49,12 @@ let lastPortrait = initialSize.height > initialSize.width;
 let lastAspect = initialSize.width / initialSize.height;
 
 const applySize = () => {
+  // モバイルキーボード表示で visualViewport が縮むと
+  // アスペクト比が変わりシーン再起動→キーボードが閉じるため、入力中は無視する
+  if (isDomInputOpen()) {
+    return;
+  }
+
   const size = getGameSize();
   const portrait = size.height > size.width;
   const aspect = size.width / size.height;

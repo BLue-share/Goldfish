@@ -10,12 +10,19 @@ export interface DomInputOptions {
   game?: Phaser.Game;
 }
 
+/** 名前入力ダイアログ表示中か（キーボード表示によるリサイズ抑止用） */
+let domInputOpen = false;
+
+export function isDomInputOpen(): boolean {
+  return domInputOpen || Boolean(document.querySelector('[data-dom-input]'));
+}
+
 /**
  * モバイルでも安定して動く名前入力ダイアログ。
  */
 export function showDomInput(options: DomInputOptions): Promise<string | null> {
-  // 残留ダイアログがあれば先に消す
   document.querySelectorAll('[data-dom-input]').forEach((el) => el.remove());
+  domInputOpen = true;
 
   const {
     label,
@@ -40,16 +47,17 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
       'inset:0',
       'background:rgba(0,0,0,0.55)',
       'display:flex',
-      'align-items:center',
+      'align-items:flex-start',
       'justify-content:center',
       'z-index:10000',
       'padding:16px',
+      'padding-top:max(16px, 12vh)',
       'touch-action:auto',
       '-webkit-user-select:auto',
       'user-select:auto',
+      'overflow:auto',
     ].join(';');
 
-    // form は使わない（iOS でキーボード閉じと同時に DOM 削除すると残ることがある）
     const panel = document.createElement('div');
     panel.style.cssText = [
       'background:#1a5a78',
@@ -66,7 +74,8 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
 
     const title = document.createElement('p');
     title.textContent = label;
-    title.style.cssText = 'margin:0 0 12px;color:#ffe566;font-size:18px;font-weight:bold;text-align:center';
+    title.style.cssText =
+      'margin:0 0 12px;color:#ffe566;font-size:18px;font-weight:bold;text-align:center';
 
     const input = document.createElement('input');
     input.type = 'text';
@@ -128,9 +137,9 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
     const cleanup = (value: string | null) => {
       if (closed) return;
       closed = true;
+      domInputOpen = false;
       document.removeEventListener('keydown', onKeyDown, true);
 
-      // キーボードを先に閉じてから DOM 削除（iOS の残像対策）
       try {
         input.blur();
       } catch {
@@ -180,7 +189,6 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
         locked = true;
         action();
       };
-      // touchend を優先（モバイル）。preventDefault で後続 click の貫通も抑止
       button.addEventListener('touchend', run, { passive: false });
       button.addEventListener('click', run);
     };
@@ -199,7 +207,14 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
     const stop = (event: Event) => {
       event.stopPropagation();
     };
-    for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'mouseup'] as const) {
+    for (const type of [
+      'pointerdown',
+      'pointerup',
+      'touchstart',
+      'touchend',
+      'mousedown',
+      'mouseup',
+    ] as const) {
       overlay.addEventListener(type, stop);
     }
 
@@ -210,14 +225,12 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
     overlay.append(panel);
     document.body.append(overlay);
 
+    // select() はモバイルでキーボードが閉じる原因になるため使わない
     window.setTimeout(() => {
       if (!closed) {
         input.focus();
-        if (defaultValue) {
-          input.select();
-        }
       }
-    }, 100);
+    }, 50);
   });
 }
 
