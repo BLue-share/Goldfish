@@ -69,3 +69,4 @@ BGM: VSQ plus+
 3. `main`（または `master`）への push で自動デプロイ
 
 ワークフロー: `.github/workflows/deploy.yml`
+
