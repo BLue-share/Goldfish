@@ -1,12 +1,12 @@
 import {
   collection,
   doc,
-  getDocFromServer,
+  getDoc,
   getDocsFromServer,
   limit,
   orderBy,
   query,
-  serverTimestamp,
+  Timestamp,
   setDoc,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
@@ -65,8 +65,15 @@ export async function submitBestScore(
 
   const db = getFirestoreDb();
   const ref = doc(db, 'users', user.uid);
-  const snap = await getDocFromServer(ref);
-  const previousBest = Number(snap.data()?.bestScore ?? 0);
+
+  let previousBest = 0;
+  try {
+    const snap = await getDoc(ref);
+    previousBest = Number(snap.data()?.bestScore ?? 0);
+  } catch (error) {
+    console.warn('[LeaderboardService] getDoc failed, treat as new:', error);
+  }
+
   const nextScore = Math.floor(score);
 
   if (nextScore <= previousBest) {
@@ -78,7 +85,7 @@ export async function submitBestScore(
     {
       displayName,
       bestScore: nextScore,
-      updatedAt: serverTimestamp(),
+      updatedAt: Timestamp.now(),
     },
     { merge: true }
   );
