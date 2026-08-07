@@ -142,10 +142,13 @@ export class ResultScene extends Phaser.Scene {
 
     try {
       if (!getDisplayName()) {
+        // リザルト表示直後のタッチがダイアログに干渉しないよう少し待つ
+        await new Promise((r) => window.setTimeout(r, 200));
         const name = await showDomInput({
           label: '新記録！ランキング用の名前',
           placeholder: '8文字以内',
           maxLength: 8,
+          game: this.game,
         });
         if (!name) {
           this.rankStatusText.setText('名前未設定のため送信しませんでした');

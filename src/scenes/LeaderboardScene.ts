@@ -111,6 +111,7 @@ export class LeaderboardScene extends Phaser.Scene {
       defaultValue: getDisplayName(),
       maxLength: 8,
       submitLabel: '変更',
+      game: this.game,
     });
 
     if (!name) {

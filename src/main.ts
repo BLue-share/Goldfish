@@ -94,6 +94,10 @@ if (window.visualViewport) {
 document.addEventListener(
   'touchmove',
   (e) => {
+    // 名前入力ダイアログ表示中はスクロール／入力を妨げない
+    if ((e.target as HTMLElement | null)?.closest?.('[data-dom-input]')) {
+      return;
+    }
     e.preventDefault();
   },
   { passive: false }
