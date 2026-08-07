@@ -12,11 +12,11 @@ export interface DomInputOptions {
 
 /**
  * モバイルでも安定して動く名前入力ダイアログ。
- * - オーバーレイ表示中は Phaser 入力を無効化
- * - 閉じた直後のゴーストクリック（下のボタン貫通）を防止
- * - input は user-select / touch-action を明示してキーボード入力を許可
  */
 export function showDomInput(options: DomInputOptions): Promise<string | null> {
+  // 残留ダイアログがあれば先に消す
+  document.querySelectorAll('[data-dom-input]').forEach((el) => el.remove());
+
   const {
     label,
     placeholder = '',
@@ -49,7 +49,8 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
       'user-select:auto',
     ].join(';');
 
-    const panel = document.createElement('form');
+    // form は使わない（iOS でキーボード閉じと同時に DOM 削除すると残ることがある）
+    const panel = document.createElement('div');
     panel.style.cssText = [
       'background:#1a5a78',
       'border:2px solid #4a9ab0',
@@ -69,7 +70,6 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.name = 'displayName';
     input.value = defaultValue;
     input.placeholder = placeholder;
     input.maxLength = maxLength;
@@ -101,16 +101,27 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
     cancelBtn.style.cssText = buttonStyle('#3a7a90');
 
     const submitBtn = document.createElement('button');
-    submitBtn.type = 'submit';
+    submitBtn.type = 'button';
     submitBtn.textContent = submitLabel;
     submitBtn.style.cssText = buttonStyle('#ff5533');
 
+    const forceRemoveOverlay = () => {
+      try {
+        input.blur();
+      } catch {
+        // ignore
+      }
+      overlay.style.display = 'none';
+      overlay.style.pointerEvents = 'none';
+      overlay.remove();
+      document.querySelectorAll('[data-dom-input]').forEach((el) => el.remove());
+    };
+
     const restoreGameInput = () => {
       if (game?.input) {
-        // 少し遅らせて、閉じた直後のタップがゲームに届かないようにする
         window.setTimeout(() => {
           game.input.enabled = prevEnabled;
-        }, 350);
+        }, 400);
       }
     };
 
@@ -118,12 +129,26 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
       if (closed) return;
       closed = true;
       document.removeEventListener('keydown', onKeyDown, true);
-      overlay.remove();
-      restoreGameInput();
-      resolve(value);
+
+      // キーボードを先に閉じてから DOM 削除（iOS の残像対策）
+      try {
+        input.blur();
+      } catch {
+        // ignore
+      }
+      cancelBtn.disabled = true;
+      submitBtn.disabled = true;
+      overlay.style.opacity = '0';
+      overlay.style.pointerEvents = 'none';
+
+      window.setTimeout(() => {
+        forceRemoveOverlay();
+        restoreGameInput();
+        resolve(value);
+      }, 50);
     };
 
-    const submit = () => {
+    const doSubmit = () => {
       const trimmed = input.value.trim();
       if (!trimmed) {
         input.focus();
@@ -133,10 +158,11 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (closed) return;
       if (event.key === 'Enter') {
         event.preventDefault();
         event.stopPropagation();
-        submit();
+        doSubmit();
       }
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -145,29 +171,31 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
       }
     };
 
-    // フォーム submit（Enter / 決定ボタン）
-    panel.addEventListener('submit', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      submit();
-    });
+    const bindTap = (button: HTMLButtonElement, action: () => void) => {
+      let locked = false;
+      const run = (event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (closed || locked) return;
+        locked = true;
+        action();
+      };
+      // touchend を優先（モバイル）。preventDefault で後続 click の貫通も抑止
+      button.addEventListener('touchend', run, { passive: false });
+      button.addEventListener('click', run);
+    };
 
-    cancelBtn.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      cleanup(null);
-    });
+    bindTap(submitBtn, doSubmit);
+    bindTap(cancelBtn, () => cleanup(null));
 
-    // 背景タップで閉じる（パネル内は除外）
     overlay.addEventListener('click', (event) => {
-      if (event.target === overlay) {
+      if (event.target === overlay && !closed) {
         event.preventDefault();
         event.stopPropagation();
         cleanup(null);
       }
     });
 
-    // Phaser / ゲーム側へイベントを渡さない
     const stop = (event: Event) => {
       event.stopPropagation();
     };
