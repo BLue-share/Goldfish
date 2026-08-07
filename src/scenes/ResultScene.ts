@@ -156,13 +156,33 @@ export class ResultScene extends Phaser.Scene {
 
       const user = await ensureSignedIn();
       if (!user) {
-        this.rankStatusText.setText('ランキング送信に失敗しました');
+        this.rankStatusText.setText('ログインに失敗しました。再試行してください');
         return;
       }
 
       this.registry.set('firebaseUid', user.uid);
-      const submitted = await submitBestScore(score);
-      this.rankStatusText.setText(submitted ? 'ランキングを更新しました！' : 'ランキング送信済み');
+      const result = await submitBestScore(score, user);
+
+      switch (result.status) {
+        case 'updated':
+          this.rankStatusText.setText('ランキングを更新しました！');
+          break;
+        case 'unchanged':
+          this.rankStatusText.setText('すでに同じ以上の記録があります');
+          break;
+        case 'no-name':
+          this.rankStatusText.setText('名前未設定のため送信できません');
+          break;
+        case 'no-user':
+          this.rankStatusText.setText('ログインに失敗しました。再試行してください');
+          break;
+        case 'not-configured':
+          this.rankStatusText.setText('ランキング設定がありません');
+          break;
+        default:
+          this.rankStatusText.setText('ランキングを送信できませんでした');
+          break;
+      }
     } catch (error) {
       console.error('[ResultScene] submitRankingScore failed:', error);
       this.rankStatusText.setText('ランキング送信に失敗しました');

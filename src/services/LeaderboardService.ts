@@ -9,14 +9,27 @@ import {
   serverTimestamp,
   setDoc,
 } from 'firebase/firestore';
+import type { User } from 'firebase/auth';
 import { getFirestoreDb, isFirebaseConfigured } from '../firebase';
-import { getCurrentUser } from './AuthService';
 
 export interface LeaderboardEntry {
   rank: number;
   uid: string;
   displayName: string;
   bestScore: number;
+}
+
+export type SubmitScoreStatus =
+  | 'updated'
+  | 'unchanged'
+  | 'not-configured'
+  | 'no-user'
+  | 'no-name'
+  | 'invalid-score';
+
+export interface SubmitScoreResult {
+  ok: boolean;
+  status: SubmitScoreStatus;
 }
 
 const DISPLAY_NAME_KEY = 'slashBurst_displayName';
@@ -29,36 +42,48 @@ export function setDisplayName(name: string): void {
   localStorage.setItem(DISPLAY_NAME_KEY, name.trim());
 }
 
-export async function submitBestScore(score: number): Promise<boolean> {
-  if (!isFirebaseConfigured() || score <= 0) {
-    return false;
+export async function submitBestScore(
+  score: number,
+  user: User | null
+): Promise<SubmitScoreResult> {
+  if (!isFirebaseConfigured()) {
+    return { ok: false, status: 'not-configured' };
   }
 
-  const user = getCurrentUser();
+  if (!Number.isFinite(score) || score <= 0) {
+    return { ok: false, status: 'invalid-score' };
+  }
+
+  if (!user) {
+    return { ok: false, status: 'no-user' };
+  }
+
   const displayName = getDisplayName();
-  if (!user || !displayName) {
-    return false;
+  if (!displayName) {
+    return { ok: false, status: 'no-name' };
   }
 
   const db = getFirestoreDb();
   const ref = doc(db, 'users', user.uid);
   const snap = await getDoc(ref);
-  const previousBest = snap.data()?.bestScore ?? 0;
-  if (score <= previousBest) {
-    return false;
+  const previousBest = Number(snap.data()?.bestScore ?? 0);
+  const nextScore = Math.floor(score);
+
+  if (nextScore <= previousBest) {
+    return { ok: true, status: 'unchanged' };
   }
 
   await setDoc(
     ref,
     {
       displayName,
-      bestScore: score,
+      bestScore: nextScore,
       updatedAt: serverTimestamp(),
     },
     { merge: true }
   );
 
-  return true;
+  return { ok: true, status: 'updated' };
 }
 
 export async function fetchLeaderboard(limitCount = 20): Promise<LeaderboardEntry[]> {

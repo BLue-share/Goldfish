@@ -7,13 +7,13 @@ service cloud.firestore {
 
       allow create, update: if request.auth != null
         && request.auth.uid == userId
-        && request.resource.data.keys().hasAll(['displayName', 'bestScore', 'updatedAt'])
         && request.resource.data.displayName is string
         && request.resource.data.displayName.size() >= 1
         && request.resource.data.displayName.size() <= 20
-        && request.resource.data.bestScore is int
+        && request.resource.data.bestScore is number
         && request.resource.data.bestScore >= 0
         && request.resource.data.bestScore <= 999999
+        && request.resource.data.updatedAt is timestamp
         && (!resource.exists || request.resource.data.bestScore >= resource.data.bestScore);
     }
   }

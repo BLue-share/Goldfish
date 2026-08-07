@@ -21,29 +21,61 @@ export function ensureSignedIn(): Promise<User | null> {
     return authReady;
   }
 
-  authReady = new Promise((resolve) => {
+  authReady = (async () => {
     const auth = getFirebaseAuth();
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        currentUser = user;
-        unsubscribe();
-        resolve(user);
-        return;
+    try {
+      // 既存セッションがあれば待つ（最大数秒）
+      const existing = await waitForAuthUser(auth, 2500);
+      if (existing) {
+        currentUser = existing;
+        return existing;
       }
 
-      try {
-        const credential = await signInAnonymously(auth);
-        currentUser = credential.user;
-        unsubscribe();
-        resolve(credential.user);
-      } catch (error) {
-        console.error('[AuthService] signInAnonymously failed:', error);
-        unsubscribe();
-        resolve(null);
-      }
-    });
+      const credential = await signInAnonymously(auth);
+      currentUser = credential.user;
+      return credential.user;
+    } catch (error) {
+      console.error('[AuthService] ensureSignedIn failed:', error);
+      // 次回呼べるように失敗キャッシュをクリア
+      authReady = null;
+      currentUser = null;
+      return null;
+    }
+  })();
+
+  // 成功時も authReady は残してよい（currentUser があれば短縮される）
+  // 失敗時は上で null に戻す
+  return authReady.then((user) => {
+    if (!user) {
+      authReady = null;
+    }
+    return user;
   });
+}
 
-  return authReady;
+function waitForAuthUser(
+  auth: ReturnType<typeof getFirebaseAuth>,
+  timeoutMs: number
+): Promise<User | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const finish = (user: User | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsubscribe();
+      resolve(user);
+    };
+
+    // 初回コールバックで現在の認証状態が分かる（user または null）
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      finish(user);
+    });
+
+    const timer = setTimeout(() => {
+      finish(null);
+    }, timeoutMs);
+  });
 }
