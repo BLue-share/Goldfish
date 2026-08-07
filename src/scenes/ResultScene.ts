@@ -103,17 +103,19 @@ export class ResultScene extends Phaser.Scene {
       color: '#9ec8d8',
     }).setOrigin(0.5);
 
-    if (isFirebaseConfigured() && data?.isNewHighScore) {
+    const showRankStatus = isFirebaseConfigured() && Boolean(data?.isNewHighScore);
+    if (showRankStatus) {
       this.rankStatusText = this.add.text(cx, portrait ? 208 : 222, '', {
         fontFamily: 'Arial',
         fontSize: '13px',
         color: '#aaffcc',
         align: 'center',
+        wordWrap: { width: Math.min(w - 32, 360) },
       }).setOrigin(0.5);
       void this.submitRankingScore(data.score);
     }
 
-    this.drawCatchList(data?.scoopedByType ?? {}, portrait);
+    this.drawCatchList(data?.scoopedByType ?? {}, portrait, showRankStatus);
 
     const btnY = portrait ? h - 90 : h - 80;
     const btnW = portrait ? Math.min(150, w * 0.38) : 140;
@@ -203,12 +205,18 @@ export class ResultScene extends Phaser.Scene {
     bg.on('pointerup', onClick);
   }
 
-  private drawCatchList(scoopedByType: Partial<Record<GoldfishType, number>>, portrait: boolean): void {
+  private drawCatchList(
+    scoopedByType: Partial<Record<GoldfishType, number>>,
+    portrait: boolean,
+    showRankStatus = false
+  ): void {
     const w = this.scale.width;
     const h = this.scale.height;
     const cx = w / 2;
+    // ランキング送信メッセージと「すくった種類」が重ならないよう下げる
+    const offsetY = showRankStatus ? (portrait ? 28 : 32) : 0;
 
-    this.add.text(cx, portrait ? 220 : 230, 'すくった種類', {
+    this.add.text(cx, (portrait ? 220 : 230) + offsetY, 'すくった種類', {
       fontFamily: 'Arial',
       fontSize: '15px',
       color: '#ffe566',
@@ -225,7 +233,7 @@ export class ResultScene extends Phaser.Scene {
       .sort((a, b) => a.rank - b.rank);
 
     if (caught.length === 0) {
-      this.add.text(cx, portrait ? 360 : 320, '一匹もすくれなかった…', {
+      this.add.text(cx, (portrait ? 360 : 320) + offsetY, '一匹もすくれなかった…', {
         fontFamily: 'Arial',
         fontSize: '18px',
         color: '#b8dcec',
@@ -237,7 +245,7 @@ export class ResultScene extends Phaser.Scene {
     const cellW = portrait ? w / cols - 8 : 140;
     const cellH = portrait ? 100 : 90;
     const startX = cx - ((cols - 1) * cellW) / 2;
-    const startY = portrait ? 280 : 275;
+    const startY = (portrait ? 280 : 275) + offsetY;
     const maxRows = portrait ? 4 : 3;
 
     caught.slice(0, cols * maxRows).forEach((entry, i) => {
