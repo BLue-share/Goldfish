@@ -4,6 +4,7 @@ import { TitleScene } from './scenes/TitleScene';
 import { GameScene } from './scenes/GameScene';
 import { ResultScene } from './scenes/ResultScene';
 import { ScoreTableScene } from './scenes/ScoreTableScene';
+import { LeaderboardScene } from './scenes/LeaderboardScene';
 import { getGameSize } from './utils/layout';
 
 const initialSize = getGameSize();
@@ -14,7 +15,7 @@ const config: Phaser.Types.Core.GameConfig = {
   height: initialSize.height,
   parent: 'game-container',
   backgroundColor: '#1a6a8a',
-  scene: [BootScene, TitleScene, GameScene, ResultScene, ScoreTableScene],
+  scene: [BootScene, TitleScene, GameScene, ResultScene, ScoreTableScene, LeaderboardScene],
   physics: {
     default: 'arcade',
     arcade: {

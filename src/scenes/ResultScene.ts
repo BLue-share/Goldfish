@@ -1,7 +1,15 @@
 import Phaser from 'phaser';
 import { BgmManager } from '../systems/BgmManager';
+import { ensureSignedIn } from '../services/AuthService';
+import {
+  getDisplayName,
+  setDisplayName,
+  submitBestScore,
+} from '../services/LeaderboardService';
+import { isFirebaseConfigured } from '../firebase';
 import { GOLDFISH_DATA, GoldfishType } from '../entities/Goldfish';
 import { isPortraitLayout } from '../utils/layout';
+import { showDomInput } from '../utils/domInput';
 
 interface ResultData {
   score: number;
@@ -14,6 +22,8 @@ interface ResultData {
 }
 
 export class ResultScene extends Phaser.Scene {
+  private rankStatusText?: Phaser.GameObjects.Text;
+
   constructor() {
     super({ key: 'ResultScene' });
   }
@@ -93,6 +103,16 @@ export class ResultScene extends Phaser.Scene {
       color: '#9ec8d8',
     }).setOrigin(0.5);
 
+    if (isFirebaseConfigured() && data?.isNewHighScore) {
+      this.rankStatusText = this.add.text(cx, portrait ? 208 : 222, '', {
+        fontFamily: 'Arial',
+        fontSize: '13px',
+        color: '#aaffcc',
+        align: 'center',
+      }).setOrigin(0.5);
+      void this.submitRankingScore(data.score);
+    }
+
     this.drawCatchList(data?.scoopedByType ?? {}, portrait);
 
     const btnY = portrait ? h - 90 : h - 80;
@@ -109,6 +129,42 @@ export class ResultScene extends Phaser.Scene {
     });
 
     this.cameras.main.fadeIn(300);
+  }
+
+  private async submitRankingScore(score: number): Promise<void> {
+    if (!this.rankStatusText) {
+      return;
+    }
+
+    this.rankStatusText.setText('ランキング送信中…');
+
+    try {
+      if (!getDisplayName()) {
+        const name = await showDomInput({
+          label: '新記録！ランキング用の名前',
+          placeholder: '8文字以内',
+          maxLength: 8,
+        });
+        if (!name) {
+          this.rankStatusText.setText('名前未設定のため送信しませんでした');
+          return;
+        }
+        setDisplayName(name);
+      }
+
+      const user = await ensureSignedIn();
+      if (!user) {
+        this.rankStatusText.setText('ランキング送信に失敗しました');
+        return;
+      }
+
+      this.registry.set('firebaseUid', user.uid);
+      const submitted = await submitBestScore(score);
+      this.rankStatusText.setText(submitted ? 'ランキングを更新しました！' : 'ランキング送信済み');
+    } catch (error) {
+      console.error('[ResultScene] submitRankingScore failed:', error);
+      this.rankStatusText.setText('ランキング送信に失敗しました');
+    }
   }
 
   private makeButton(

@@ -1,8 +1,6 @@
 name: Deploy to GitHub Pages
 
 on:
-  push:
-    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -32,6 +30,8 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          VITE_BASE_PATH: /Goldfish/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

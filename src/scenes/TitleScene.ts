@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { BgmManager } from '../systems/BgmManager';
+import { ensureSignedIn } from '../services/AuthService';
+import { isFirebaseConfigured } from '../firebase';
 import { isTouchDevice } from '../utils/device';
 import { isPortraitLayout } from '../utils/layout';
 
@@ -72,9 +74,28 @@ export class TitleScene extends Phaser.Scene {
       });
     });
 
-    this.createButton(btnX, portrait ? h * 0.56 : 385, btnW, portrait ? 56 : 50, 0x3a7a90, 0x4a9ab0, '得点表', 20, () => {
+    const subBtnH = portrait ? 52 : 48;
+    const subBtnW = portrait ? Math.min(150, w * 0.42) : 160;
+    const subGap = 12;
+    const subRowY = portrait ? h * 0.56 : 385;
+    const subLeftX = cx - subBtnW - subGap / 2;
+    const subRightX = cx + subGap / 2;
+
+    this.createButton(subLeftX, subRowY, subBtnW, subBtnH, 0x3a7a90, 0x4a9ab0, '得点表', 18, () => {
       this.scene.start('ScoreTableScene');
     });
+
+    this.createButton(subRightX, subRowY, subBtnW, subBtnH, 0x3a7a90, 0x4a9ab0, 'ランキング', 18, () => {
+      this.scene.start('LeaderboardScene');
+    });
+
+    if (isFirebaseConfigured()) {
+      void ensureSignedIn().then((user) => {
+        if (user) {
+          this.registry.set('firebaseUid', user.uid);
+        }
+      });
+    }
 
     const highScore = localStorage.getItem('slashBurst_highScore') || '0';
     this.add.text(cx, portrait ? h * 0.68 : 470, `ベストスコア: ${highScore}`, {

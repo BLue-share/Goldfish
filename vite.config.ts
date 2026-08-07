@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite';
 
-// GitHub Pages 本番はリポジトリ名に合わせた base を使う（例: /Goldfish/）
-// ローカル開発は base '/' のまま
+// VITE_BASE_PATH でデプロイ先の base を切り替え
+// Firebase Hosting: VITE_BASE_PATH=/
+// GitHub Pages: VITE_BASE_PATH=/Goldfish/
 export default defineConfig(({ command }) => ({
-  base: command === 'build' ? '/Goldfish/' : '/',
+  base: process.env.VITE_BASE_PATH ?? (command === 'build' ? '/Goldfish/' : '/'),
   build: {
     target: 'es2020',
   },

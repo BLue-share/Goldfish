@@ -406,6 +406,7 @@ export class GameScene extends Phaser.Scene {
   private endGame(): void {
     if (this.isGameOver) return;
     this.isGameOver = true;
+    const isNewHighScore = this.scoreSystem.isNewHighScore();
     this.scoreSystem.finalize();
     BgmManager.stop(this);
 
@@ -418,7 +419,7 @@ export class GameScene extends Phaser.Scene {
       scooped: this.scoopedCount,
       scoopedByType: { ...this.scoopedByType },
       highScore: this.scoreSystem.getHighScore(),
-      isNewHighScore: this.scoreSystem.isNewHighScore(),
+      isNewHighScore,
       poiBroken: this.poi <= 0,
     };
     this.registry.set('resultData', resultData);
