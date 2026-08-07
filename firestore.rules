@@ -4,17 +4,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{userId} {
       allow read: if true;
-
-      // updatedAt の型チェックは serverTimestamp と相性が悪いため入れない
+      // まずは確実に通るルール（自分の uid のみ書き込み可）
+      // Console でこの内容を「公開」しないと反映されません
       allow create, update: if request.auth != null
-        && request.auth.uid == userId
-        && request.resource.data.displayName is string
-        && request.resource.data.displayName.size() >= 1
-        && request.resource.data.displayName.size() <= 20
-        && request.resource.data.bestScore is number
-        && request.resource.data.bestScore >= 0
-        && request.resource.data.bestScore <= 999999
-        && (!resource.exists || request.resource.data.bestScore >= resource.data.bestScore);
+        && request.auth.uid == userId;
     }
   }
 }

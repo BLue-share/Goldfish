@@ -6,11 +6,10 @@ import {
   limit,
   orderBy,
   query,
-  Timestamp,
   setDoc,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
-import { getFirestoreDb, isFirebaseConfigured } from '../firebase';
+import { getFirebaseAuth, getFirestoreDb, isFirebaseConfigured } from '../firebase';
 
 export interface LeaderboardEntry {
   rank: number;
@@ -54,17 +53,33 @@ export async function submitBestScore(
     return { ok: false, status: 'invalid-score' };
   }
 
-  if (!user) {
-    return { ok: false, status: 'no-user' };
-  }
-
-  const displayName = getDisplayName();
+  const displayName = getDisplayName().trim();
   if (!displayName) {
     return { ok: false, status: 'no-name' };
   }
 
+  // ルールは request.auth を見るため、渡された user ではなく Auth の currentUser を使う
+  const auth = getFirebaseAuth();
+  await auth.authStateReady();
+  let authed = auth.currentUser ?? user;
+  if (!authed) {
+    return { ok: false, status: 'no-user' };
+  }
+
+  try {
+    await authed.getIdToken(true);
+  } catch (error) {
+    console.error('[LeaderboardService] getIdToken failed:', error);
+    return { ok: false, status: 'no-user' };
+  }
+
+  authed = auth.currentUser;
+  if (!authed) {
+    return { ok: false, status: 'no-user' };
+  }
+
   const db = getFirestoreDb();
-  const ref = doc(db, 'users', user.uid);
+  const ref = doc(db, 'users', authed.uid);
 
   let previousBest = 0;
   try {
@@ -74,21 +89,29 @@ export async function submitBestScore(
     console.warn('[LeaderboardService] getDoc failed, treat as new:', error);
   }
 
-  const nextScore = Math.floor(score);
+  const nextScore = Math.floor(Number(score));
 
   if (nextScore <= previousBest) {
     return { ok: true, status: 'unchanged' };
   }
 
-  await setDoc(
-    ref,
-    {
-      displayName,
-      bestScore: nextScore,
-      updatedAt: Timestamp.now(),
-    },
-    { merge: true }
-  );
+  const payload = {
+    displayName,
+    bestScore: nextScore,
+    updatedAt: Date.now(),
+  };
+
+  try {
+    await setDoc(ref, payload, { merge: true });
+  } catch (error) {
+    console.error('[LeaderboardService] setDoc failed:', {
+      uid: authed.uid,
+      authUid: auth.currentUser?.uid,
+      payload,
+      error,
+    });
+    throw error;
+  }
 
   return { ok: true, status: 'updated' };
 }
@@ -100,7 +123,6 @@ export async function fetchLeaderboard(limitCount = 20): Promise<LeaderboardEntr
 
   const db = getFirestoreDb();
   const q = query(collection(db, 'users'), orderBy('bestScore', 'desc'), limit(limitCount));
-  // キャッシュではなくサーバーから取得して他端末の更新をすぐ反映
   const snapshot = await getDocsFromServer(q);
 
   return snapshot.docs.map((entry, index) => ({

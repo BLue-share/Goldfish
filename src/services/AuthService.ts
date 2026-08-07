@@ -1,4 +1,9 @@
-import { onAuthStateChanged, signInAnonymously, type User } from 'firebase/auth';
+import {
+  onAuthStateChanged,
+  signInAnonymously,
+  type Auth,
+  type User,
+} from 'firebase/auth';
 import { getFirebaseAuth, isFirebaseConfigured } from '../firebase';
 
 let currentUser: User | null = null;
@@ -8,13 +13,23 @@ export function getCurrentUser(): User | null {
   return currentUser;
 }
 
-export function ensureSignedIn(): Promise<User | null> {
+/**
+ * 匿名ログインを保証し、Firestore が request.auth を認識できるよう
+ * ID トークンも取得してから User を返す。
+ */
+export async function ensureSignedIn(): Promise<User | null> {
   if (!isFirebaseConfigured()) {
     return Promise.resolve(null);
   }
 
   if (currentUser) {
-    return Promise.resolve(currentUser);
+    try {
+      await currentUser.getIdToken();
+      return currentUser;
+    } catch {
+      currentUser = null;
+      authReady = null;
+    }
   }
 
   if (authReady) {
@@ -25,27 +40,37 @@ export function ensureSignedIn(): Promise<User | null> {
     const auth = getFirebaseAuth();
 
     try {
-      // 既存セッションがあれば待つ（最大数秒）
-      const existing = await waitForAuthUser(auth, 2500);
-      if (existing) {
-        currentUser = existing;
-        return existing;
+      await auth.authStateReady();
+
+      let user = auth.currentUser;
+      if (!user) {
+        const existing = await waitForAuthUser(auth, 2000);
+        user = existing;
       }
 
-      const credential = await signInAnonymously(auth);
-      currentUser = credential.user;
-      return credential.user;
+      if (!user) {
+        const credential = await signInAnonymously(auth);
+        user = credential.user;
+      }
+
+      // Firestore ルールの request.auth に載るようトークンを確定
+      await user.getIdToken(true);
+      await auth.authStateReady();
+
+      if (!auth.currentUser) {
+        throw new Error('Auth currentUser is null after sign-in');
+      }
+
+      currentUser = auth.currentUser;
+      return currentUser;
     } catch (error) {
       console.error('[AuthService] ensureSignedIn failed:', error);
-      // 次回呼べるように失敗キャッシュをクリア
       authReady = null;
       currentUser = null;
       return null;
     }
   })();
 
-  // 成功時も authReady は残してよい（currentUser があれば短縮される）
-  // 失敗時は上で null に戻す
   return authReady.then((user) => {
     if (!user) {
       authReady = null;
@@ -54,10 +79,11 @@ export function ensureSignedIn(): Promise<User | null> {
   });
 }
 
-function waitForAuthUser(
-  auth: ReturnType<typeof getFirebaseAuth>,
-  timeoutMs: number
-): Promise<User | null> {
+function waitForAuthUser(auth: Auth, timeoutMs: number): Promise<User | null> {
+  if (auth.currentUser) {
+    return Promise.resolve(auth.currentUser);
+  }
+
   return new Promise((resolve) => {
     let settled = false;
 
@@ -69,13 +95,12 @@ function waitForAuthUser(
       resolve(user);
     };
 
-    // 初回コールバックで現在の認証状態が分かる（user または null）
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       finish(user);
     });
 
     const timer = setTimeout(() => {
-      finish(null);
+      finish(auth.currentUser);
     }, timeoutMs);
   });
 }
