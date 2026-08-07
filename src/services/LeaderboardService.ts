@@ -1,8 +1,8 @@
 import {
   collection,
   doc,
-  getDoc,
-  getDocs,
+  getDocFromServer,
+  getDocsFromServer,
   limit,
   orderBy,
   query,
@@ -65,7 +65,7 @@ export async function submitBestScore(
 
   const db = getFirestoreDb();
   const ref = doc(db, 'users', user.uid);
-  const snap = await getDoc(ref);
+  const snap = await getDocFromServer(ref);
   const previousBest = Number(snap.data()?.bestScore ?? 0);
   const nextScore = Math.floor(score);
 
@@ -93,7 +93,8 @@ export async function fetchLeaderboard(limitCount = 20): Promise<LeaderboardEntr
 
   const db = getFirestoreDb();
   const q = query(collection(db, 'users'), orderBy('bestScore', 'desc'), limit(limitCount));
-  const snapshot = await getDocs(q);
+  // キャッシュではなくサーバーから取得して他端末の更新をすぐ反映
+  const snapshot = await getDocsFromServer(q);
 
   return snapshot.docs.map((entry, index) => ({
     rank: index + 1,

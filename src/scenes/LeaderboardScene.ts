@@ -1,18 +1,14 @@
 import Phaser from 'phaser';
 import { ensureSignedIn } from '../services/AuthService';
-import {
-  fetchLeaderboard,
-  getDisplayName,
-  setDisplayName,
-  type LeaderboardEntry,
-} from '../services/LeaderboardService';
+import { fetchLeaderboard, type LeaderboardEntry } from '../services/LeaderboardService';
 import { isFirebaseConfigured } from '../firebase';
 import { isPortraitLayout } from '../utils/layout';
-import { showDomInput } from '../utils/domInput';
 
 export class LeaderboardScene extends Phaser.Scene {
   private statusText?: Phaser.GameObjects.Text;
   private listContainer?: Phaser.GameObjects.Container;
+  private portrait = false;
+  private loading = false;
 
   constructor() {
     super({ key: 'LeaderboardScene' });
@@ -21,7 +17,8 @@ export class LeaderboardScene extends Phaser.Scene {
   create(): void {
     const w = this.scale.width;
     const h = this.scale.height;
-    const portrait = isPortraitLayout(w, h);
+    this.portrait = isPortraitLayout(w, h);
+    const portrait = this.portrait;
     const cx = w / 2;
 
     const bg = this.add.graphics();
@@ -51,11 +48,35 @@ export class LeaderboardScene extends Phaser.Scene {
     this.listContainer = this.add.container(0, 0);
 
     const btnY = portrait ? h - 52 : h - 46;
-    const btnW = Math.min(240, w * 0.6);
-    this.createBackButton(cx, btnY, btnW, portrait ? 44 : 48);
+    const sideBtnW = Math.min(120, w * 0.32);
+    const gap = 12;
+
+    this.createActionButton(
+      cx - sideBtnW - gap / 2,
+      btnY,
+      sideBtnW,
+      portrait ? 44 : 48,
+      0x3a7a90,
+      0x4a9ab0,
+      'タイトルへ',
+      () => this.scene.start('TitleScene')
+    );
+
+    this.createActionButton(
+      cx + gap / 2,
+      btnY,
+      sideBtnW,
+      portrait ? 44 : 48,
+      0x2a8a60,
+      0x3aaa70,
+      '更新',
+      () => {
+        void this.loadLeaderboard();
+      }
+    );
 
     if (isFirebaseConfigured()) {
-      void this.loadLeaderboard(portrait);
+      void this.loadLeaderboard();
     } else {
       this.statusText?.setText('Firebase 未設定のため\nランキングを表示できません');
     }
@@ -63,35 +84,32 @@ export class LeaderboardScene extends Phaser.Scene {
     this.cameras.main.fadeIn(200);
   }
 
-  private async loadLeaderboard(portrait: boolean): Promise<void> {
+  private async loadLeaderboard(): Promise<void> {
+    if (this.loading) {
+      return;
+    }
+    this.loading = true;
+    this.statusText?.setText('読み込み中…');
+    this.listContainer?.removeAll(true);
+
     try {
-      if (!getDisplayName()) {
-        const name = await showDomInput({
-          label: 'ランキング用の名前',
-          placeholder: '8文字以内',
-          maxLength: 8,
-        });
-        if (!name) {
-          this.statusText?.setText('名前が未設定です');
-          return;
-        }
-        setDisplayName(name);
+      // 閲覧は名前不要。自分の行ハイライト用にログインだけ試みる
+      const user = await ensureSignedIn();
+      if (user) {
+        this.registry.set('firebaseUid', user.uid);
       }
 
-      await ensureSignedIn().then((user) => {
-        if (user) {
-          this.registry.set('firebaseUid', user.uid);
-        }
-      });
       const entries = await fetchLeaderboard(20);
-      this.renderEntries(entries, portrait);
+      this.renderEntries(entries);
     } catch (error) {
       console.error('[LeaderboardScene] load failed:', error);
       this.statusText?.setText('ランキングの取得に失敗しました');
+    } finally {
+      this.loading = false;
     }
   }
 
-  private renderEntries(entries: LeaderboardEntry[], portrait: boolean): void {
+  private renderEntries(entries: LeaderboardEntry[]): void {
     if (!this.listContainer || !this.statusText) {
       return;
     }
@@ -101,6 +119,7 @@ export class LeaderboardScene extends Phaser.Scene {
 
     const w = this.scale.width;
     const h = this.scale.height;
+    const portrait = this.portrait;
     const padX = portrait ? 16 : 48;
     const top = portrait ? 118 : 128;
     const bottom = portrait ? h - 100 : h - 96;
@@ -123,7 +142,8 @@ export class LeaderboardScene extends Phaser.Scene {
       rowBg.fillStyle(isSelf ? 0x3a8a60 : index % 2 === 0 ? 0x1a5a78 : 0x165068, isTop ? 0.55 : 0.35);
       rowBg.fillRoundedRect(padX, y - rowH * 0.42, rowW, rowH * 0.84, 8);
 
-      const rankColor = entry.rank === 1 ? '#ffe566' : entry.rank === 2 ? '#d0d0d0' : entry.rank === 3 ? '#d4a574' : '#ffffff';
+      const rankColor =
+        entry.rank === 1 ? '#ffe566' : entry.rank === 2 ? '#d0d0d0' : entry.rank === 3 ? '#d4a574' : '#ffffff';
 
       this.listContainer!.add(rowBg);
       this.listContainer!.add(
@@ -152,37 +172,43 @@ export class LeaderboardScene extends Phaser.Scene {
     });
   }
 
-  private createBackButton(cx: number, cy: number, btnW: number, btnH: number): void {
-    const btnX = cx - btnW / 2;
+  private createActionButton(
+    x: number,
+    cy: number,
+    btnW: number,
+    btnH: number,
+    color: number,
+    hover: number,
+    label: string,
+    onClick: () => void
+  ): void {
     const btnY = cy - btnH / 2;
 
-    const backBg = this.add.graphics();
-    backBg.fillStyle(0x3a7a90, 1);
-    backBg.fillRoundedRect(btnX, btnY, btnW, btnH, 10);
-    backBg.setInteractive(new Phaser.Geom.Rectangle(btnX, btnY, btnW, btnH), Phaser.Geom.Rectangle.Contains);
+    const bg = this.add.graphics();
+    bg.fillStyle(color, 1);
+    bg.fillRoundedRect(x, btnY, btnW, btnH, 10);
+    bg.setInteractive(new Phaser.Geom.Rectangle(x, btnY, btnW, btnH), Phaser.Geom.Rectangle.Contains);
 
-    const backText = this.add.text(cx, cy, 'タイトルへ', {
+    const text = this.add.text(x + btnW / 2, cy, label, {
       fontFamily: 'Arial Black, Arial',
-      fontSize: '20px',
+      fontSize: '18px',
       color: '#ffffff',
       stroke: '#000000',
       strokeThickness: 2,
     }).setOrigin(0.5);
 
-    backBg.on('pointerover', () => {
-      backBg.clear();
-      backBg.fillStyle(0x4a9ab0, 1);
-      backBg.fillRoundedRect(btnX, btnY, btnW, btnH, 10);
-      backText.setScale(1.05);
+    bg.on('pointerover', () => {
+      bg.clear();
+      bg.fillStyle(hover, 1);
+      bg.fillRoundedRect(x, btnY, btnW, btnH, 10);
+      text.setScale(1.05);
     });
-    backBg.on('pointerout', () => {
-      backBg.clear();
-      backBg.fillStyle(0x3a7a90, 1);
-      backBg.fillRoundedRect(btnX, btnY, btnW, btnH, 10);
-      backText.setScale(1);
+    bg.on('pointerout', () => {
+      bg.clear();
+      bg.fillStyle(color, 1);
+      bg.fillRoundedRect(x, btnY, btnW, btnH, 10);
+      text.setScale(1);
     });
-    backBg.on('pointerup', () => {
-      this.scene.start('TitleScene');
-    });
+    bg.on('pointerup', onClick);
   }
 }
