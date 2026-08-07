@@ -6,7 +6,15 @@ export interface DomInputOptions {
   submitLabel?: string;
 }
 
+let activeOverlay: HTMLDivElement | null = null;
+
 export function showDomInput(options: DomInputOptions): Promise<string | null> {
+  // 既に開いていれば閉じる（二重表示防止）
+  if (activeOverlay) {
+    activeOverlay.remove();
+    activeOverlay = null;
+  }
+
   const {
     label,
     placeholder = '',
@@ -19,6 +27,7 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
     let closed = false;
 
     const overlay = document.createElement('div');
+    activeOverlay = overlay;
     overlay.style.cssText = [
       'position:fixed',
       'inset:0',
@@ -28,7 +37,6 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
       'justify-content:center',
       'z-index:10000',
       'padding:16px',
-      'touch-action:manipulation',
     ].join(';');
 
     const panel = document.createElement('div');
@@ -40,14 +48,7 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
       'width:min(320px,100%)',
       'box-shadow:0 8px 24px rgba(0,0,0,0.35)',
       'font-family:Arial,sans-serif',
-      'touch-action:manipulation',
     ].join(';');
-
-    // Phaser にポインターが吸われないようにする
-    panel.addEventListener('pointerdown', stopPhaserSteal);
-    panel.addEventListener('pointerup', stopPhaserSteal);
-    panel.addEventListener('touchstart', stopPhaserSteal, { passive: false });
-    panel.addEventListener('touchend', stopPhaserSteal, { passive: false });
 
     const title = document.createElement('p');
     title.textContent = label;
@@ -68,31 +69,28 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
       'border-radius:8px',
       'font-size:16px',
       'margin-bottom:12px',
-      'touch-action:manipulation',
+      'background:#fff',
+      'color:#222',
     ].join(';');
 
     const buttonRow = document.createElement('div');
     buttonRow.style.cssText = 'display:flex;gap:8px';
 
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.textContent = 'キャンセル';
-    cancelBtn.style.cssText = buttonStyle('#3a7a90');
-
-    const submitBtn = document.createElement('button');
-    submitBtn.type = 'button';
-    submitBtn.textContent = submitLabel;
-    submitBtn.style.cssText = buttonStyle('#ff5533');
+    const cancelBtn = createStyledButton('キャンセル', '#3a7a90');
+    const submitBtn = createStyledButton(submitLabel, '#ff5533');
 
     const cleanup = (value: string | null) => {
       if (closed) return;
       closed = true;
-      document.removeEventListener('keydown', onKeyDown);
+      if (activeOverlay === overlay) {
+        activeOverlay = null;
+      }
+      document.removeEventListener('keydown', onKeyDown, true);
       overlay.remove();
       resolve(value);
     };
 
-    const submit = () => {
+    const doSubmit = () => {
       const trimmed = input.value.trim();
       if (!trimmed) {
         input.focus();
@@ -104,44 +102,58 @@ export function showDomInput(options: DomInputOptions): Promise<string | null> {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Enter') {
         event.preventDefault();
-        submit();
+        event.stopPropagation();
+        doSubmit();
       }
       if (event.key === 'Escape') {
-        event.preventDefault();
-        cleanup(null);
-      }
-    };
-
-    bindButton(cancelBtn, () => cleanup(null));
-    bindButton(submitBtn, submit);
-
-    overlay.addEventListener('pointerup', (event) => {
-      if (event.target === overlay) {
         event.preventDefault();
         event.stopPropagation();
         cleanup(null);
       }
+    };
+
+    // 全イベントを overlay でキャプチャし Phaser に伝搬させない
+    const blockForPhaser = (e: Event) => {
+      e.stopPropagation();
+    };
+    for (const evt of ['pointerdown', 'pointerup', 'pointermove', 'touchstart', 'touchend', 'touchmove', 'mousedown', 'mouseup', 'click'] as const) {
+      overlay.addEventListener(evt, blockForPhaser, true);
+    }
+
+    // ボタンのアクションを touchend / click で確実に拾う
+    attachAction(submitBtn, doSubmit);
+    attachAction(cancelBtn, () => cleanup(null));
+
+    // オーバーレイ背景タップで閉じる
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) cleanup(null);
+    });
+    overlay.addEventListener('touchend', (e) => {
+      if (e.target === overlay) cleanup(null);
     });
 
-    document.addEventListener('keydown', onKeyDown);
+    // キーボード（キャプチャフェーズで Phaser より先に拾う）
+    document.addEventListener('keydown', onKeyDown, true);
 
     buttonRow.append(cancelBtn, submitBtn);
     panel.append(title, input, buttonRow);
     overlay.append(panel);
     document.body.append(overlay);
 
-    // 少し遅らせてフォーカス（モバイルキーボード対策）
     window.setTimeout(() => {
       if (!closed) {
         input.focus();
         input.select();
       }
-    }, 50);
+    }, 80);
   });
 }
 
-function buttonStyle(background: string): string {
-  return [
+function createStyledButton(text: string, background: string): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = text;
+  btn.style.cssText = [
     'flex:1',
     'padding:12px 10px',
     'border:none',
@@ -149,24 +161,37 @@ function buttonStyle(background: string): string {
     `background:${background}`,
     'color:#fff',
     'font-size:15px',
+    'font-weight:bold',
     'cursor:pointer',
-    'touch-action:manipulation',
     '-webkit-tap-highlight-color:transparent',
+    '-webkit-appearance:none',
+    'user-select:none',
   ].join(';');
+  return btn;
 }
 
-function stopPhaserSteal(event: Event): void {
-  event.stopPropagation();
-}
+function attachAction(button: HTMLButtonElement, action: () => void): void {
+  let handled = false;
 
-function bindButton(button: HTMLButtonElement, action: () => void): void {
-  const handler = (event: Event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    action();
-  };
+  // touchend が最も確実（モバイル）
+  button.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!handled) {
+      handled = true;
+      action();
+      window.setTimeout(() => { handled = false; }, 300);
+    }
+  }, { passive: false });
 
-  // click だけだとタッチ端末で届かないことがあるため pointerup も使う
-  button.addEventListener('pointerup', handler);
-  button.addEventListener('click', handler);
+  // click はデスクトップのフォールバック
+  button.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!handled) {
+      handled = true;
+      action();
+      window.setTimeout(() => { handled = false; }, 300);
+    }
+  });
 }
