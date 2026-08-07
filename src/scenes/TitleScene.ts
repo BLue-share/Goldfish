@@ -1,11 +1,18 @@
 import Phaser from 'phaser';
 import { BgmManager } from '../systems/BgmManager';
 import { ensureSignedIn } from '../services/AuthService';
+import {
+  getDisplayName,
+  updateDisplayName,
+} from '../services/LeaderboardService';
 import { isFirebaseConfigured } from '../firebase';
 import { isTouchDevice } from '../utils/device';
 import { isPortraitLayout } from '../utils/layout';
+import { showDomInput } from '../utils/domInput';
 
 export class TitleScene extends Phaser.Scene {
+  private nameText?: Phaser.GameObjects.Text;
+
   constructor() {
     super({ key: 'TitleScene' });
   }
@@ -32,7 +39,7 @@ export class TitleScene extends Phaser.Scene {
         .setFlipX(true);
     }
 
-    const title = this.add.text(cx, portrait ? h * 0.22 : 150, '金魚すくい', {
+    const title = this.add.text(cx, portrait ? h * 0.2 : 140, '金魚すくい', {
       fontFamily: 'Arial Black, Arial',
       fontSize: portrait ? '52px' : '64px',
       color: '#ffe566',
@@ -49,13 +56,13 @@ export class TitleScene extends Phaser.Scene {
       ease: 'Sine.easeInOut',
     });
 
-    this.add.text(cx, portrait ? h * 0.32 : 220, 'タップで金魚をすくえ！', {
+    this.add.text(cx, portrait ? h * 0.3 : 210, 'タップで金魚をすくえ！', {
       fontFamily: 'Arial',
       fontSize: portrait ? '20px' : '22px',
       color: '#e8f6ff',
     }).setOrigin(0.5);
 
-    this.add.text(cx, portrait ? h * 0.37 : 255, '空振りするとポイが破れるよ', {
+    this.add.text(cx, portrait ? h * 0.35 : 245, '空振りするとポイが破れるよ', {
       fontFamily: 'Arial',
       fontSize: '16px',
       color: '#b8dcec',
@@ -66,7 +73,7 @@ export class TitleScene extends Phaser.Scene {
     const btnH = touch || portrait ? 64 : 56;
     const btnX = cx - btnW / 2;
 
-    this.createButton(btnX, portrait ? h * 0.46 : 305, btnW, btnH, 0xff5533, 0xff7744, 'はじめる', 26, () => {
+    this.createButton(btnX, portrait ? h * 0.42 : 290, btnW, btnH, 0xff5533, 0xff7744, 'はじめる', 26, () => {
       BgmManager.play(this, 'bgm_title', 0.3);
       this.cameras.main.fadeOut(300, 0, 0, 0);
       this.time.delayedCall(300, () => {
@@ -74,10 +81,10 @@ export class TitleScene extends Phaser.Scene {
       });
     });
 
-    const subBtnH = portrait ? 52 : 48;
+    const subBtnH = portrait ? 48 : 46;
     const subBtnW = portrait ? Math.min(150, w * 0.42) : 160;
     const subGap = 12;
-    const subRowY = portrait ? h * 0.56 : 385;
+    const subRowY = portrait ? h * 0.52 : 370;
     const subLeftX = cx - subBtnW - subGap / 2;
     const subRightX = cx + subGap / 2;
 
@@ -95,22 +102,42 @@ export class TitleScene extends Phaser.Scene {
           this.registry.set('firebaseUid', user.uid);
         }
       });
+
+      this.nameText = this.add.text(cx, portrait ? h * 0.62 : 440, this.formatNameLabel(), {
+        fontFamily: 'Arial',
+        fontSize: '16px',
+        color: '#d0eaf5',
+      }).setOrigin(0.5);
+
+      this.createButton(
+        btnX,
+        portrait ? h * 0.66 : 470,
+        btnW,
+        portrait ? 44 : 42,
+        0x4a6a80,
+        0x5a7a90,
+        '名前を変更',
+        18,
+        () => {
+          void this.changeDisplayName();
+        }
+      );
     }
 
     const highScore = localStorage.getItem('slashBurst_highScore') || '0';
-    this.add.text(cx, portrait ? h * 0.68 : 470, `ベストスコア: ${highScore}`, {
+    this.add.text(cx, portrait ? h * 0.76 : 530, `ベストスコア: ${highScore}`, {
       fontFamily: 'Arial',
       fontSize: '18px',
       color: '#d0eaf5',
     }).setOrigin(0.5);
 
-    this.add.text(cx, portrait ? h * 0.74 : 510, '更紗和金が最高得点！', {
+    this.add.text(cx, portrait ? h * 0.81 : 560, '更紗和金が最高得点！', {
       fontFamily: 'Arial',
       fontSize: '14px',
       color: '#9ec8d8',
     }).setOrigin(0.5);
 
-    const hint = this.add.text(cx, portrait ? h * 0.9 : 575, '画面をタップでBGM開始', {
+    const hint = this.add.text(cx, portrait ? h * 0.92 : 595, '画面をタップでBGM開始', {
       fontFamily: 'Arial',
       fontSize: '12px',
       color: '#8eb8c8',
@@ -125,6 +152,33 @@ export class TitleScene extends Phaser.Scene {
     tryPlayTitleBgm();
 
     this.cameras.main.fadeIn(300);
+  }
+
+  private formatNameLabel(): string {
+    const name = getDisplayName();
+    return name ? `ランキング名: ${name}` : 'ランキング名: 未設定';
+  }
+
+  private async changeDisplayName(): Promise<void> {
+    const name = await showDomInput({
+      label: 'ランキング用の名前',
+      placeholder: '8文字以内',
+      defaultValue: getDisplayName(),
+      maxLength: 8,
+      submitLabel: '変更',
+    });
+
+    if (!name) {
+      return;
+    }
+
+    await ensureSignedIn();
+    const ok = await updateDisplayName(name);
+    this.nameText?.setText(this.formatNameLabel());
+
+    if (!ok) {
+      this.nameText?.setText(`${this.formatNameLabel()}（同期失敗）`);
+    }
   }
 
   private createButton(

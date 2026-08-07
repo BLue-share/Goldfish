@@ -1,8 +1,14 @@
 import Phaser from 'phaser';
 import { ensureSignedIn } from '../services/AuthService';
-import { fetchLeaderboard, type LeaderboardEntry } from '../services/LeaderboardService';
+import {
+  fetchLeaderboard,
+  getDisplayName,
+  updateDisplayName,
+  type LeaderboardEntry,
+} from '../services/LeaderboardService';
 import { isFirebaseConfigured } from '../firebase';
 import { isPortraitLayout } from '../utils/layout';
+import { showDomInput } from '../utils/domInput';
 
 export class LeaderboardScene extends Phaser.Scene {
   private statusText?: Phaser.GameObjects.Text;
@@ -48,25 +54,39 @@ export class LeaderboardScene extends Phaser.Scene {
     this.listContainer = this.add.container(0, 0);
 
     const btnY = portrait ? h - 52 : h - 46;
-    const sideBtnW = Math.min(120, w * 0.32);
-    const gap = 12;
+    const btnH = portrait ? 44 : 48;
+    const gap = 8;
+    const sideBtnW = Math.min(100, (w - gap * 4) / 3);
 
     this.createActionButton(
-      cx - sideBtnW - gap / 2,
+      cx - sideBtnW * 1.5 - gap,
       btnY,
       sideBtnW,
-      portrait ? 44 : 48,
+      btnH,
       0x3a7a90,
       0x4a9ab0,
-      'タイトルへ',
+      'タイトル',
       () => this.scene.start('TitleScene')
     );
 
     this.createActionButton(
-      cx + gap / 2,
+      cx - sideBtnW / 2,
       btnY,
       sideBtnW,
-      portrait ? 44 : 48,
+      btnH,
+      0x4a6a80,
+      0x5a7a90,
+      '名前変更',
+      () => {
+        void this.changeDisplayName();
+      }
+    );
+
+    this.createActionButton(
+      cx + sideBtnW / 2 + gap,
+      btnY,
+      sideBtnW,
+      btnH,
       0x2a8a60,
       0x3aaa70,
       '更新',
@@ -82,6 +102,31 @@ export class LeaderboardScene extends Phaser.Scene {
     }
 
     this.cameras.main.fadeIn(200);
+  }
+
+  private async changeDisplayName(): Promise<void> {
+    const name = await showDomInput({
+      label: 'ランキング用の名前',
+      placeholder: '8文字以内',
+      defaultValue: getDisplayName(),
+      maxLength: 8,
+      submitLabel: '変更',
+    });
+
+    if (!name) {
+      return;
+    }
+
+    this.statusText?.setText('名前を更新中…');
+    await ensureSignedIn();
+    const ok = await updateDisplayName(name);
+
+    if (!ok) {
+      this.statusText?.setText('名前の更新に失敗しました');
+      return;
+    }
+
+    await this.loadLeaderboard();
   }
 
   private async loadLeaderboard(): Promise<void> {
@@ -191,7 +236,7 @@ export class LeaderboardScene extends Phaser.Scene {
 
     const text = this.add.text(x + btnW / 2, cy, label, {
       fontFamily: 'Arial Black, Arial',
-      fontSize: '18px',
+      fontSize: btnW < 110 ? '15px' : '18px',
       color: '#ffffff',
       stroke: '#000000',
       strokeThickness: 2,

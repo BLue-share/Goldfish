@@ -41,6 +41,53 @@ export function setDisplayName(name: string): void {
   localStorage.setItem(DISPLAY_NAME_KEY, name.trim());
 }
 
+/**
+ * ローカルの表示名を更新し、Firestore に記録があれば displayName も更新する。
+ */
+export async function updateDisplayName(name: string): Promise<boolean> {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > 20) {
+    return false;
+  }
+
+  setDisplayName(trimmed);
+
+  if (!isFirebaseConfigured()) {
+    return true;
+  }
+
+  const auth = getFirebaseAuth();
+  await auth.authStateReady();
+  const user = auth.currentUser;
+  if (!user) {
+    return true; // ローカルだけ更新（未ログイン時）
+  }
+
+  try {
+    await user.getIdToken(true);
+    const db = getFirestoreDb();
+    const ref = doc(db, 'users', user.uid);
+    const snap = await getDoc(ref);
+
+    if (!snap.exists()) {
+      return true;
+    }
+
+    await setDoc(
+      ref,
+      {
+        displayName: trimmed,
+        updatedAt: Date.now(),
+      },
+      { merge: true }
+    );
+    return true;
+  } catch (error) {
+    console.error('[LeaderboardService] updateDisplayName failed:', error);
+    return false;
+  }
+}
+
 export async function submitBestScore(
   score: number,
   user: User | null
